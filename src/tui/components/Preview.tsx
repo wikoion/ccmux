@@ -9,7 +9,9 @@ import {
   onCleanup,
 } from "solid-js";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
+import { MouseButton } from "@opentui/core";
 import type {
+  BoxRenderable,
   StyledText,
   TextRenderable,
   ScrollBoxRenderable,
@@ -234,6 +236,8 @@ interface PreviewProps {
    * backoff without multi-second waits.
    */
   pollDelays?: { min: number; max: number; kick?: number };
+  /** Left button pressed on the left border, the preview's resize handle. */
+  onBorderMouseDown?: () => void;
 }
 
 export const Preview: Component<PreviewProps> = (props) => {
@@ -243,6 +247,7 @@ export const Preview: Component<PreviewProps> = (props) => {
   );
   const [content, setContent] = createSignal<StyledText | null>(null);
   let textRef: TextRenderable | undefined;
+  let boxRef: BoxRenderable | undefined;
   // Raw capture from the last refresh (or a sentinel while the pane is
   // unreadable or refused); lets refreshPane skip the ANSI re-parse (and the
   // focused-poll loop back off) when the pane is silent or stays in one state.
@@ -497,6 +502,15 @@ export const Preview: Component<PreviewProps> = (props) => {
       borderColor={props.focused ? theme.mauve : theme.border}
       paddingLeft={1}
       paddingRight={1}
+      onMouseDown={(event) => {
+        // Children are inset by the border, so the box's own left column is
+        // the border itself.
+        if (event.button !== MouseButton.LEFT) return;
+        if (!boxRef || event.x !== boxRef.x) return;
+        props.onBorderMouseDown?.();
+        event.preventDefault();
+      }}
+      ref={(r: BoxRenderable) => (boxRef = r)}
     >
       <Show
         when={props.session}
@@ -578,9 +592,13 @@ export const Preview: Component<PreviewProps> = (props) => {
               stickyStart="bottom"
               ref={(r: ScrollBoxRenderable) => props.onScrollboxRef?.(r)}
             >
+              {/* Word wrap: the agent's pane is usually wider than the
+                  preview, and clipped lines hid the end of every reply. Word
+                  mode still breaks runs with no spaces (box borders, URLs)
+                  by character, so nothing is cut off. */}
               <text
                 fg={theme.text}
-                wrapMode="none"
+                wrapMode="word"
                 ref={(r: TextRenderable) => (textRef = r)}
               />
             </scrollbox>

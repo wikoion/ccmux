@@ -74,6 +74,7 @@ describe("Footer", () => {
   it("renders preview focused help text", async () => {
     const frame = await renderFooter({ previewFocused: true });
     expect(frame).toContain("exit focus");
+    expect(frame).toContain("alt+h/l resize");
     expect(frame).toContain("keys sent to pane");
   });
 

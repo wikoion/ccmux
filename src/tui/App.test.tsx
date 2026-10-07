@@ -2070,6 +2070,29 @@ describe("App pane-switch feedback and server scoping", () => {
     }
   });
 
+  it("resizes the preview by dragging its left border", async () => {
+    const restoreFetch = withServerInfo(null);
+    try {
+      await renderWithSession({ initialPreview: true });
+      const borderColumn = () =>
+        setup.captureCharFrame().split("\n")[5]!.lastIndexOf("│");
+      // 40% of 120 columns: the border sits at column 72.
+      expect(borderColumn()).toBe(72);
+
+      // Dragging to column 60 leaves 60 of 120 columns: 50%.
+      await setup.mockMouse.drag(72, 5, 60, 5);
+      await setup.renderOnce();
+      expect(borderColumn()).toBe(60);
+
+      // A drag that starts anywhere else leaves the width alone.
+      await setup.mockMouse.drag(30, 5, 40, 5);
+      await setup.renderOnce();
+      expect(borderColumn()).toBe(60);
+    } finally {
+      restoreFetch();
+    }
+  });
+
   it("persistent picker: a failed pane switch shows a toast (was sidebar-only)", async () => {
     // The Toast render gate used to be sidebar-only, so a switch failure in the
     // persistent picker showed nothing. Now it must surface here too.

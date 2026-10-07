@@ -621,6 +621,16 @@ describe("store", () => {
       expect(store.state.previewWidth).toBe(20);
     });
 
+    it("setPreviewWidth rounds a dragged width and clamps it", () => {
+      const store = createTUIStore({ previewWidth: 40 });
+      store.actions.setPreviewWidth(52.6);
+      expect(store.state.previewWidth).toBe(53);
+      store.actions.setPreviewWidth(95);
+      expect(store.state.previewWidth).toBe(70);
+      store.actions.setPreviewWidth(3);
+      expect(store.state.previewWidth).toBe(20);
+    });
+
     it("should not change when already at max", () => {
       const store = createTUIStore({ previewWidth: 70 });
       store.actions.resizePreview(5);

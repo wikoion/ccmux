@@ -199,7 +199,9 @@ export const Footer: Component<FooterProps> = (props) => {
           <text fg={theme.overlay}>? or Esc close</text>
         </Match>
         <Match when={props.previewFocused}>
-          <text fg={theme.overlay}>tab/esc exit focus · keys sent to pane</text>
+          <text fg={theme.overlay}>
+            tab/esc exit focus · alt+h/l resize · keys sent to pane
+          </text>
         </Match>
         <Match when={props.confirmMode}>
           <text fg={theme.overlay}>y confirm · n/Esc cancel</text>

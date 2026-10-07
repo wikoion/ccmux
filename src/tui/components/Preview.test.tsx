@@ -637,6 +637,38 @@ describe("Preview pane capture", () => {
     expect(frame).not.toContain("OLDER_SCREEN");
   });
 
+  it("wraps pane lines wider than the preview instead of clipping them", async () => {
+    captureImpl = async () =>
+      "start of a long reply line that is much wider than the preview pane END_OF_LINE";
+    await renderReactive(mockEnrichedSession({ tmuxPane: "%1" }));
+    expect(await pollFrame(15)).toContain("END_OF_LINE");
+  });
+
+  it("reports a left press on its left border, and only there", async () => {
+    let presses = 0;
+    setup = await testRender(
+      () => (
+        <TickContext.Provider value={{ tick: () => 0 }}>
+          <box flexDirection="row" width="100%" height="100%">
+            <box flexGrow={1} />
+            <Preview
+              session={mockEnrichedSession({ tmuxPane: "%1" })}
+              width={40}
+              onBorderMouseDown={() => presses++}
+            />
+          </box>
+        </TickContext.Provider>
+      ),
+      { width: 100, height: 15 },
+    );
+    await setup.renderOnce();
+    // 40% of 100 columns: the preview starts, border and all, at column 60.
+    await setup.mockMouse.click(61, 5);
+    expect(presses).toBe(0);
+    await setup.mockMouse.click(60, 5);
+    expect(presses).toBe(1);
+  });
+
   it("renders the failure state when a capture throws (dead pane)", async () => {
     captureImpl = async () => {
       throw new Error("pane gone");

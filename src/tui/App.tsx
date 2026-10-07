@@ -3233,6 +3233,10 @@ export function App(props: AppProps) {
   let sseClient: SSEClient | null = null;
   let previewScrollbox: ScrollBoxRenderable | undefined;
   let helpScrollbox: ScrollBoxRenderable | undefined;
+  // Set while the preview's left border is being dragged. Drag events go to
+  // whatever the first drag step landed on and bubble up, so the root box
+  // sees every step wherever the pointer goes.
+  let draggingPreviewBorder = false;
   const [previewRefreshKey, setPreviewRefreshKey] = createSignal(0);
   const [initialDataReceived, setInitialDataReceived] = createSignal(false);
 
@@ -4081,7 +4085,20 @@ export function App(props: AppProps) {
         tick: store.tick,
       }}
     >
-      <box flexDirection="column" width="100%" height="100%">
+      <box
+        flexDirection="column"
+        width="100%"
+        height="100%"
+        onMouseDrag={(event) => {
+          if (!draggingPreviewBorder) return;
+          const width = appDims().width;
+          if (width > 0) {
+            store.actions.setPreviewWidth(((width - event.x) * 100) / width);
+          }
+        }}
+        onMouseDragEnd={() => (draggingPreviewBorder = false)}
+        onMouseUp={() => (draggingPreviewBorder = false)}
+      >
         <Header
           sessionCount={store.filteredSessions().length}
           totalCount={
@@ -4178,6 +4195,7 @@ export function App(props: AppProps) {
                   width={store.state.previewWidth}
                   focused={store.state.previewFocused}
                   refreshKey={previewRefreshKey()}
+                  onBorderMouseDown={() => (draggingPreviewBorder = true)}
                   searchQuery={
                     store.state.searchMode ? store.state.searchQuery : undefined
                   }

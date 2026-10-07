@@ -1729,6 +1729,14 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     }
   }
 
+  function setPreviewWidth(width: number) {
+    const next = Math.max(20, Math.min(70, Math.round(width)));
+    if (next !== state.previewWidth) {
+      setState("previewWidth", next);
+      persistUIState({ previewWidth: next });
+    }
+  }
+
   const actions = {
     setSessions(sessions: EnrichedSession[]) {
       // Preserve client-synthesized subprocess invoke rows. They live only
@@ -2592,12 +2600,11 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     },
 
     resizePreview(delta: number) {
-      const next = Math.max(20, Math.min(70, state.previewWidth + delta));
-      if (next !== state.previewWidth) {
-        setState("previewWidth", next);
-        persistUIState({ previewWidth: next });
-      }
+      setPreviewWidth(state.previewWidth + delta);
     },
+
+    /** Absolute width in percent, for dragging the preview's border. */
+    setPreviewWidth,
 
     setActivePaneId(paneId: string | null) {
       setState("activePaneId", paneId);
