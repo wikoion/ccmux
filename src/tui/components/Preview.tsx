@@ -25,6 +25,7 @@ import {
   parseAnsiToStyledText,
   highlightSearchMatches,
 } from "../utils/ansi-renderer";
+import { fitPaneLines } from "../utils/pane-view";
 import { getStatusColor } from "./StatusBadge";
 import { getEffectiveStatus } from "../../daemon/status-machine";
 import { useStatusIcon } from "../utils/useStatusIcon";
@@ -245,6 +246,9 @@ export const Preview: Component<PreviewProps> = (props) => {
   const separatorWidth = createMemo(() =>
     Math.max(1, Math.floor((dims().width * props.width) / 100) - 3),
   );
+  // One column short of the separator: the scrollbar takes a column whenever
+  // the content overflows, which a captured agent pane always does.
+  const contentWidth = createMemo(() => Math.max(1, separatorWidth() - 1));
   const [content, setContent] = createSignal<StyledText | null>(null);
   let textRef: TextRenderable | undefined;
   let boxRef: BoxRenderable | undefined;
@@ -394,6 +398,7 @@ export const Preview: Component<PreviewProps> = (props) => {
     let styledContent = content();
     if (textRef && styledContent) {
       try {
+        styledContent = fitPaneLines(styledContent, contentWidth());
         const query = props.searchQuery?.trim();
         if (query) {
           styledContent = highlightSearchMatches(
@@ -594,8 +599,9 @@ export const Preview: Component<PreviewProps> = (props) => {
             >
               {/* Word wrap: the agent's pane is usually wider than the
                   preview, and clipped lines hid the end of every reply. Word
-                  mode still breaks runs with no spaces (box borders, URLs)
-                  by character, so nothing is cut off. */}
+                  mode still breaks runs with no spaces (URLs) by character,
+                  so nothing is cut off. Full-width rules and padding are
+                  fitted first (fitPaneLines) so they do not wrap at all. */}
               <text
                 fg={theme.text}
                 wrapMode="word"

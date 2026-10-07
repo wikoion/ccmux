@@ -644,6 +644,29 @@ describe("Preview pane capture", () => {
     expect(await pollFrame(15)).toContain("END_OF_LINE");
   });
 
+  it("draws Claude's chat box rules on one line each instead of wrapping them", async () => {
+    // Claude Code's chat box is two `─` rules as wide as its own pane. Word
+    // wrap split each into a full line plus a stub; a fit one column too wide
+    // (forgetting the scrollbar) would still leave a one-character stub.
+    const rule = "─".repeat(174);
+    const filler = Array.from({ length: 30 }, (_, i) => `reply line ${i}`);
+    captureImpl = async () =>
+      [...filler, rule, "❯ hello", rule, "  status line"].join("\n");
+    await renderReactive(mockEnrichedSession({ tmuxPane: "%1" }));
+    const rows = (await pollFrame(15)).split("\n");
+    // Columns 2-37 are the content area: border, padding, then the scrollbar.
+    const content = rows.map((row) => row.slice(2, 38).trim());
+    const ruleRows = content
+      .map((row, i) => (/^─+$/.test(row) ? i : -1))
+      .filter((i) => i !== -1);
+    // The header separator plus the two chat box rules, each rule exactly
+    // filling the 36-column text area.
+    expect(ruleRows).toHaveLength(3);
+    expect(content[ruleRows[1]!]).toBe("─".repeat(36));
+    expect(content[ruleRows[1]! + 1]).toBe("❯ hello");
+    expect(content[ruleRows[2]! + 1]).toBe("status line");
+  });
+
   it("reports a left press on its left border, and only there", async () => {
     let presses = 0;
     setup = await testRender(
