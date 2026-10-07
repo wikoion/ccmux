@@ -53,6 +53,9 @@ const sendKeysSpy = mock(
     _event: { name: string; ctrl?: boolean },
   ): Promise<boolean> => true,
 );
+const pasteToPaneSpy = mock(
+  async (_target: string, _text: string): Promise<boolean> => true,
+);
 const flashPaneSpy = mock(() => {});
 const flashPaneDetachedSpy = mock(() => {});
 // Assertable because a refused switch must not mark the pane active
@@ -84,6 +87,7 @@ mock.module("./utils/tmux", () => ({
   ...realTmux,
   switchToPane: switchToPaneSpy,
   sendKeys: sendKeysSpy,
+  pasteToPane: pasteToPaneSpy,
   capturePane: async () => "",
   flashPane: flashPaneSpy,
   flashPaneDetached: flashPaneDetachedSpy,
@@ -2065,6 +2069,35 @@ describe("App pane-switch feedback and server scoping", () => {
       expect(squish(setup.captureCharFrame())).not.toContain(
         squish("keys sent to pane"),
       );
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  it("pastes into the preview pane as one paste, not key by key", async () => {
+    // Typed key by key, each pasted newline would submit the agent's input.
+    const restoreFetch = withServerInfo(null);
+    try {
+      await renderWithSession({ initialPreview: true });
+      setup.mockInput.pressKey("j");
+      await setup.renderOnce();
+      setup.mockInput.pressTab();
+      await setup.renderOnce();
+      sendKeysSpy.mockClear();
+      pasteToPaneSpy.mockClear();
+
+      await setup.mockInput.pasteBracketedText("line one\nline two");
+      await setup.renderOnce();
+      expect(pasteToPaneSpy).toHaveBeenCalledTimes(1);
+      expect(pasteToPaneSpy.mock.calls[0]![1]).toBe("line one\nline two");
+      expect(sendKeysSpy).not.toHaveBeenCalled();
+
+      // Out of preview focus a paste is not sent to the pane.
+      setup.mockInput.pressTab();
+      await setup.renderOnce();
+      await setup.mockInput.pasteBracketedText("elsewhere");
+      await setup.renderOnce();
+      expect(pasteToPaneSpy).toHaveBeenCalledTimes(1);
     } finally {
       restoreFetch();
     }

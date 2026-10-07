@@ -102,8 +102,8 @@ describe("parseRestoreCandidate", () => {
 describe("sendKeysArgs", () => {
   // Built from OpenTUI's own parser so the tests track what the TUI really
   // receives, not a hand-written guess at the event shape.
-  const key = (raw: string) => {
-    const parsed = parseKeypress(raw);
+  const key = (raw: string, kitty = false) => {
+    const parsed = parseKeypress(raw, { useKittyKeyboard: kitty });
     if (!parsed) throw new Error(`unparsed key ${JSON.stringify(raw)}`);
     return parsed;
   };
@@ -136,10 +136,48 @@ describe("sendKeysArgs", () => {
     expect(sendKeysArgs(key("\x01"))).toEqual(["C-a"]);
   });
 
-  it("never types an escape sequence literally", () => {
-    // Alt+a's sequence is ESC a; it falls back to the bare name as before.
-    expect(sendKeysArgs(key("\x1ba"))).toEqual(["-l", "a"]);
-    expect(sendKeysArgs(key("\x1b[5~"))).toBe(null);
+  it("sends Alt chords as M- keys", () => {
+    expect(sendKeysArgs(key("\x1ba"))).toEqual(["M-a"]);
+    expect(sendKeysArgs(key("\x1bA"))).toEqual(["M-A"]);
+    expect(sendKeysArgs(key("\x1b1"))).toEqual(["M-1"]);
+    // Kitty protocol: no ESC in the sequence, Alt in the modifiers.
+    expect(sendKeysArgs(key("\x1b[97;3u", true))).toEqual(["M-a"]);
+    expect(sendKeysArgs(key("\x1b[97;4u", true))).toEqual(["M-A"]);
+  });
+
+  it("decodes Alt+punctuation that OpenTUI leaves unnamed", () => {
+    // These parse to name "" with sequence ESC <char> and were dropped.
+    expect(sendKeysArgs(key("\x1b."))).toEqual(["M-."]);
+    expect(sendKeysArgs(key("\x1b/"))).toEqual(["M-/"]);
+    expect(sendKeysArgs(key("\x1bé"))).toEqual(["M-é"]);
+  });
+
+  it("escapes a trailing semicolon so tmux does not read it as a separator", () => {
+    expect(sendKeysArgs(key(";"))).toEqual(["-l", "\\;"]);
+    expect(sendKeysArgs(key("\x1b;"))).toEqual(["M-\\;"]);
+  });
+
+  it("keeps Ctrl and Alt on named keys", () => {
+    expect(sendKeysArgs(key("\x1b[1;5D"))).toEqual(["C-Left"]);
+    expect(sendKeysArgs(key("\x1b[1;6D"))).toEqual(["C-S-Left"]);
+    expect(sendKeysArgs(key("\x1b[1;3D"))).toEqual(["M-Left"]);
+    expect(sendKeysArgs(key("\x00"))).toEqual(["C-Space"]);
+    expect(sendKeysArgs(key("\x1b\x7f"))).toEqual(["M-BSpace"]);
+    expect(sendKeysArgs(key("\x1b\r"))).toEqual(["M-Enter"]);
+    expect(sendKeysArgs(key("\x1b\x01"))).toEqual(["C-M-a"]);
+  });
+
+  it("sends page, insert and function keys", () => {
+    expect(sendKeysArgs(key("\x1b[5~"))).toEqual(["PPage"]);
+    expect(sendKeysArgs(key("\x1b[6~"))).toEqual(["NPage"]);
+    expect(sendKeysArgs(key("\x1b[2~"))).toEqual(["IC"]);
+    expect(sendKeysArgs(key("\x1bOP"))).toEqual(["F1"]);
+    expect(sendKeysArgs(key("\x1b[24~"))).toEqual(["F12"]);
+    expect(sendKeysArgs(key("\x1b[15;2~"))).toEqual(["S-F5"]);
+  });
+
+  it("drops an escape sequence it cannot name instead of typing it", () => {
+    expect(sendKeysArgs(key("\x1b[99~"))).toBe(null);
   });
 });
 

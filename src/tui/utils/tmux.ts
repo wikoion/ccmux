@@ -11,6 +11,7 @@ import {
   type ClientTtyRefusal,
 } from "../../lib/tmux-client";
 import { theme } from "../theme";
+import { sendPromptToPane } from "../../daemon/pane-io";
 
 export { switchToPane } from "./client-switch";
 
@@ -60,6 +61,21 @@ const SPECIAL_KEY_MAP: Record<string, string> = {
   end: "End",
   tab: "Tab",
   escape: "Escape",
+  pageup: "PPage",
+  pagedown: "NPage",
+  insert: "IC",
+  f1: "F1",
+  f2: "F2",
+  f3: "F3",
+  f4: "F4",
+  f5: "F5",
+  f6: "F6",
+  f7: "F7",
+  f8: "F8",
+  f9: "F9",
+  f10: "F10",
+  f11: "F11",
+  f12: "F12",
 };
 
 async function tmuxSendKeys(
@@ -76,6 +92,7 @@ async function tmuxSendKeys(
 interface ForwardedKey {
   name: string;
   ctrl?: boolean;
+  meta?: boolean;
   shift?: boolean;
   sequence?: string;
 }
@@ -86,35 +103,67 @@ function isPrintable(s: string): boolean {
 }
 
 /**
+ * tmux ends a command at any argument ending in `;` and drops the `;`
+ * (`cmd_parse_from_arguments` in cmd-parse.y), so `send-keys -l ;` typed
+ * nothing. `\;` is its escape for a literal one.
+ */
+function escapeTmuxArg(arg: string): string {
+  return arg.endsWith(";") ? `${arg.slice(0, -1)}\\;` : arg;
+}
+
+/**
+ * The key an Alt chord carries, or null. Legacy terminals send Alt+x as ESC x,
+ * and OpenTUI leaves some of those unnamed (Alt+; arrives as name "" with
+ * sequence ESC ;), so the key is read from the sequence when it is ESC plus
+ * one printable character. The kitty protocol sends the key without the ESC.
+ */
+function altKey(event: ForwardedKey): string | null {
+  const { name, meta, sequence = "" } = event;
+  const escaped = sequence.startsWith("\x1b");
+  const rest = escaped ? sequence.slice(1) : sequence;
+  const single = [...rest].length === 1 && isPrintable(rest);
+  if (escaped && single) return rest;
+  if (!meta) return null;
+  if (single) return rest;
+  return name.length === 1 ? name : null;
+}
+
+/**
  * The `send-keys` arguments for one key event, or null for a key we do not
  * forward. Pure, for tests.
  *
  * OpenTUI reports Shift+A as name "a" with shift set and sequence "A", so
  * printable keys are typed from the sequence, not the name. Named keys carry
- * shift as tmux's `S-` prefix and tmux encodes it per the pane's key mode,
- * exactly as it would a key typed into that pane directly: with
- * `extended-keys` off, S-Up still sends `ESC[1;2A` and S-Enter falls back to a
- * plain CR. Shift+Tab is tmux's `BTab`.
+ * their modifiers as tmux's `C-`/`M-`/`S-` prefixes and tmux encodes them per
+ * the pane's key mode, exactly as it would a key typed into that pane
+ * directly: with `extended-keys` off, S-Up still sends `ESC[1;2A` and S-Enter
+ * falls back to a plain CR. Shift+Tab is tmux's `BTab`.
  */
 export function sendKeysArgs(event: ForwardedKey): string[] | null {
-  const { name, ctrl, shift, sequence } = event;
-
-  if (ctrl && name.length === 1) {
-    return [`C-${name}`];
-  }
+  const { name, ctrl, meta, shift, sequence } = event;
+  const mods = `${ctrl ? "C-" : ""}${meta ? "M-" : ""}`;
 
   const mapped = SPECIAL_KEY_MAP[name];
   if (mapped) {
-    if (!shift) return [mapped];
-    return [mapped === "Tab" ? "BTab" : `S-${mapped}`];
+    if (shift && mapped === "Tab") return [`${mods}BTab`];
+    return [`${mods}${shift ? "S-" : ""}${mapped}`];
+  }
+
+  if (ctrl && name.length === 1) {
+    return [escapeTmuxArg(`${mods}${name}`)];
+  }
+
+  const alt = altKey(event);
+  if (alt) {
+    return [escapeTmuxArg(`M-${alt}`)];
   }
 
   if (sequence && isPrintable(sequence)) {
-    return ["-l", sequence];
+    return ["-l", escapeTmuxArg(sequence)];
   }
 
   if (name.length === 1) {
-    return ["-l", name];
+    return ["-l", escapeTmuxArg(name)];
   }
 
   return null;
@@ -131,6 +180,14 @@ export async function sendKeys(
   } catch {
     return false;
   }
+}
+
+/**
+ * Paste text into a pane as one bracketed paste, so pasted newlines stay in
+ * the agent's input instead of each one submitting it.
+ */
+export function pasteToPane(target: string, text: string): Promise<boolean> {
+  return sendPromptToPane(target, text, false);
 }
 
 const FLASH_DURATION_MS = 500;

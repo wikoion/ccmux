@@ -10,8 +10,13 @@ import {
   createMemo,
   untrack,
 } from "solid-js";
-import { useKeyboard, useRenderer } from "@opentui/solid";
-import type { KeyEvent, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard, usePaste, useRenderer } from "@opentui/solid";
+import type {
+  KeyEvent,
+  MouseEvent,
+  PasteEvent,
+  ScrollBoxRenderable,
+} from "@opentui/core";
 import type { EnrichedSession } from "../types/session";
 import type { TmuxSocketError } from "../types";
 import {
@@ -42,6 +47,7 @@ import { SSEClient } from "./utils/sse";
 import {
   switchToPane,
   sendKeys,
+  pasteToPane,
   flashPane,
   flashPaneDetached,
   notifyActivePane,
@@ -3530,6 +3536,42 @@ export function App(props: AppProps) {
 
   let pendingG = false;
   let pendingZ = false;
+
+  /** Preview focus owns input only when no overlay is up. The key handler
+   *  below checks every overlay before preview focus; a paste follows the
+   *  same order. */
+  function previewOwnsInput(): boolean {
+    const s = store.state;
+    return (
+      s.previewFocused &&
+      !s.notice &&
+      !s.showHelp &&
+      !s.worktrees &&
+      !s.sourcePicker &&
+      !s.confirmMode &&
+      !s.copyDialog &&
+      !s.handoffDialog &&
+      !s.newSession &&
+      !s.handoffPick &&
+      !s.contextMenu &&
+      !s.groupContextMenu &&
+      !s.searchMode
+    );
+  }
+
+  // Paste in preview focus goes to the pane as one bracketed paste. Typed
+  // key by key, each pasted newline would submit the agent's input.
+  usePaste((event: PasteEvent) => {
+    if (!previewOwnsInput()) return;
+    const session = store.selectedSession();
+    if (!session?.tmuxPane || !ensureSameServer()) return;
+    const text = new TextDecoder().decode(event.bytes);
+    if (!text) return;
+    event.preventDefault();
+    void pasteToPane(session.tmuxPane, text).then(() =>
+      setPreviewRefreshKey((k) => k + 1),
+    );
+  });
 
   useKeyboard((event: KeyEvent) => {
     // The daemon suppresses `active_pane` for ccmux-titled panes, so a sidebar
