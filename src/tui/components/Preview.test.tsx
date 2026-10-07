@@ -21,10 +21,16 @@ const DEFAULT_PANE_CONTENT =
 // capture-failure path; afterEach restores the default the other tests rely on.
 let captureImpl: (pane: string, lines: number) => Promise<string> = async () =>
   DEFAULT_PANE_CONTENT;
+// The pane's cursor as the capture reports it; null is a hidden cursor.
+let cursorImpl: { line: number; col: number } | null = null;
 
 mock.module("../utils/tmux", () => ({
   ...realTmux,
   capturePane: (pane: string, lines: number) => captureImpl(pane, lines),
+  capturePaneWithCursor: async (pane: string, lines: number) => ({
+    content: await captureImpl(pane, lines),
+    cursor: cursorImpl,
+  }),
   getActivePaneId: async () => null,
   switchToPane: async () => {},
   sendKeys: async () => {},
@@ -40,6 +46,7 @@ let setup: Setup;
 afterEach(() => {
   setup?.renderer.destroy();
   captureImpl = async () => DEFAULT_PANE_CONTENT;
+  cursorImpl = null;
   // Module-global cache: restore the fail-open verdict for other tests.
   setDaemonSocketPath(null);
 });
@@ -665,6 +672,73 @@ describe("Preview pane capture", () => {
     expect(content[ruleRows[1]!]).toBe("─".repeat(36));
     expect(content[ruleRows[1]! + 1]).toBe("❯ hello");
     expect(content[ruleRows[2]! + 1]).toBe("status line");
+  });
+
+  describe("cursor", () => {
+    // The cursor is the only thing drawn with theme.text as its background.
+    const cursorCells = (frame: CapturedFrame) => {
+      const want = RGBA.fromHex(theme.text).toInts().join(",");
+      return frame.lines.flatMap((line) =>
+        line.spans
+          .filter((span) => span.bg.toInts().join(",") === want)
+          .map((span) => span.text),
+      );
+    };
+
+    async function renderWithCursor(focused: boolean) {
+      captureImpl = async () => "line\n❯ hi";
+      cursorImpl = { line: 1, col: 2 };
+      const [refreshKey, setRefreshKey] = createSignal(0);
+      setup = await testRender(
+        () => (
+          <TickContext.Provider value={{ tick: () => 0 }}>
+            <Preview
+              session={mockEnrichedSession({ tmuxPane: "%1" })}
+              width={40}
+              focused={focused}
+              refreshKey={refreshKey()}
+              pollDelays={{ min: 20, max: 40 }}
+            />
+          </TickContext.Provider>
+        ),
+        { width: 100, height: 15 },
+      );
+      await setup.renderOnce();
+      await pollFrame(15);
+      return setRefreshKey;
+    }
+
+    const wait = async (ms: number) => {
+      await new Promise((r) => setTimeout(r, ms));
+      await setup.renderOnce();
+    };
+
+    it("draws the pane's cursor on its cell while focused", async () => {
+      await renderWithCursor(true);
+      expect(cursorCells(setup.captureSpans())).toEqual(["h"]);
+    });
+
+    it("blinks, and turns solid again on a forwarded key", async () => {
+      // Mounted at t=0 and toggled every 530ms: on until 530, off until 1060.
+      const setRefreshKey = await renderWithCursor(true);
+      await wait(500); // about 700ms in
+      expect(cursorCells(setup.captureSpans())).toEqual([]);
+      setRefreshKey(1);
+      await wait(0);
+      expect(cursorCells(setup.captureSpans())).toEqual(["h"]);
+    });
+
+    it("draws no cursor while unfocused", async () => {
+      await renderWithCursor(false);
+      expect(cursorCells(setup.captureSpans())).toEqual([]);
+    });
+
+    it("repaints when only the cursor moves", async () => {
+      await renderWithCursor(true);
+      cursorImpl = { line: 1, col: 3 };
+      await pollFrame(10);
+      expect(cursorCells(setup.captureSpans())).toEqual(["i"]);
+    });
   });
 
   it("reports a left press on its left border, and only there", async () => {

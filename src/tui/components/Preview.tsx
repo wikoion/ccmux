@@ -9,7 +9,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { useSharedTerminalDimensions } from "../utils/use-shared-dimensions";
-import { MouseButton } from "@opentui/core";
+import { MouseButton, RGBA } from "@opentui/core";
 import type {
   BoxRenderable,
   StyledText,
@@ -18,14 +18,14 @@ import type {
 } from "@opentui/core";
 import type { EnrichedSession, SubagentState } from "../../types";
 import type { IconStyle } from "../../lib/icons";
-import { capturePane } from "../utils/tmux";
+import { capturePaneWithCursor, type PaneCursor } from "../utils/tmux";
 import { isSameServerCached } from "../utils/server-guard";
 import { readLastAssistantTurn } from "../utils/transcript";
 import {
   parseAnsiToStyledText,
   highlightSearchMatches,
 } from "../utils/ansi-renderer";
-import { fitPaneLines } from "../utils/pane-view";
+import { renderPaneView } from "../utils/pane-view";
 import { getStatusColor } from "./StatusBadge";
 import { getEffectiveStatus } from "../../daemon/status-machine";
 import { useStatusIcon } from "../utils/useStatusIcon";
@@ -223,6 +223,9 @@ const CROSS_SERVER = Symbol("ccmux.preview.cross-server");
  */
 const SELECTION_CAPTURE_DEBOUNCE_MS = 80;
 
+/** Half a blink cycle of the preview's cursor, close to xterm's default. */
+const CURSOR_BLINK_MS = 530;
+
 interface PreviewProps {
   session: EnrichedSession | null;
   onScrollboxRef?: (ref: ScrollBoxRenderable) => void;
@@ -267,16 +270,23 @@ export const Preview: Component<PreviewProps> = (props) => {
   // Restarts the poll loop at the kick delay; set while the loop runs.
   let kickPoll: (() => void) | null = null;
 
+  // The pane's cursor in the current capture, null when it hides it.
+  const [paneCursor, setPaneCursor] = createSignal<PaneCursor | null>(null);
+
   // Fold one capture outcome into the dedupe state: repaint (and report
   // "changed" to the poll loop) only on a transition, whether between two
-  // different contents or into/out of a sentinel state.
+  // different contents or into/out of a sentinel state. A real capture's key
+  // carries the cursor too, so a caret that moved over unchanged text (an
+  // arrow key in the agent's input) still repaints.
   const applyCapture = (
     next: string | typeof CAPTURE_FAILED | typeof CROSS_SERVER,
     rendered: string,
+    cursor: PaneCursor | null = null,
   ): boolean => {
     if (next === lastCaptured) return false;
     lastCaptured = next;
     setContent(parseAnsiToStyledText(rendered));
+    setPaneCursor(cursor);
     return true;
   };
 
@@ -298,19 +308,26 @@ export const Preview: Component<PreviewProps> = (props) => {
       return applyCapture(CROSS_SERVER, "Pane is on a different tmux server");
     }
     const seq = ++captureSeq;
-    // capturePane throws on a dead pane; fold to null so the stale-resolve guard
-    // handles both. null is unambiguous: a live but empty pane resolves to "".
-    const paneContent = await capturePane(tmuxPane, 30).catch(() => null);
+    // The capture throws on a dead pane; fold to null so the stale-resolve
+    // guard handles both. null is unambiguous: a live but empty pane resolves
+    // to "".
+    const capture = await capturePaneWithCursor(tmuxPane, 30).catch(
+      () => null,
+    );
     // Drop a stale resolve: the selection moved panes while we awaited. Applying
     // it would paint under the new row and corrupt `lastCaptured`. Mirrors the
     // BackgroundPeek logPath guard above.
     if (props.session?.tmuxPane !== tmuxPane) return false;
     if (seq < appliedSeq) return false;
     appliedSeq = seq;
-    if (paneContent === null) {
+    if (capture === null) {
       return applyCapture(CAPTURE_FAILED, "Failed to capture pane");
     }
-    return applyCapture(paneContent, paneContent);
+    const { content: paneContent, cursor } = capture;
+    const key = cursor
+      ? `${paneContent}\0${cursor.line},${cursor.col}`
+      : paneContent;
+    return applyCapture(key, paneContent, cursor);
   };
 
   createEffect(() => {
@@ -393,12 +410,33 @@ export const Preview: Component<PreviewProps> = (props) => {
     });
   });
 
+  // The cursor blinks while the preview is focused, as a terminal's does, and
+  // turns solid again on each forwarded key (a refreshKey bump) so it never
+  // vanishes mid-word.
+  const [cursorOn, setCursorOn] = createSignal(true);
+  createEffect(() => {
+    void props.refreshKey;
+    if (!props.focused) return;
+    setCursorOn(true);
+    const timer = setInterval(() => setCursorOn((on) => !on), CURSOR_BLINK_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+
   // Bypass reconciler's string conversion by setting content directly on ref
   createEffect(() => {
     let styledContent = content();
     if (textRef && styledContent) {
       try {
-        styledContent = fitPaneLines(styledContent, contentWidth());
+        const cursor = props.focused && cursorOn() ? paneCursor() : null;
+        styledContent = renderPaneView(
+          styledContent,
+          contentWidth(),
+          cursor && {
+            ...cursor,
+            fg: RGBA.fromHex(theme.base),
+            bg: RGBA.fromHex(theme.text),
+          },
+        );
         const query = props.searchQuery?.trim();
         if (query) {
           styledContent = highlightSearchMatches(

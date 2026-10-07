@@ -89,6 +89,7 @@ mock.module("./utils/tmux", () => ({
   sendKeys: sendKeysSpy,
   pasteToPane: pasteToPaneSpy,
   capturePane: async () => "",
+  capturePaneWithCursor: async () => ({ content: "", cursor: null }),
   flashPane: flashPaneSpy,
   flashPaneDetached: flashPaneDetachedSpy,
   isPaneInCurrentWindow: isPaneInCurrentWindowSpy,

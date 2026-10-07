@@ -16,9 +16,12 @@ import { PANE_FIELD_SEP } from "../../lib/tmux-format";
 // reaches this file. A distinct cache entry always gets the implementation,
 // the same trick client-switch.test.ts uses.
 const REAL_TMUX_SPECIFIER = "./tmux" + "?real";
-const { openAgentsWindow, notifyActivePane, sendKeysArgs } = (await import(
-  REAL_TMUX_SPECIFIER
-)) as typeof import("./tmux");
+const {
+  openAgentsWindow,
+  notifyActivePane,
+  sendKeysArgs,
+  parseCaptureWithCursor,
+} = (await import(REAL_TMUX_SPECIFIER)) as typeof import("./tmux");
 
 // Note: capturePane isn't unit-tested here. Preview/App tests call
 // `mock.module("../utils/tmux")`, which is process-wide in Bun, so capturePane
@@ -178,6 +181,35 @@ describe("sendKeysArgs", () => {
 
   it("drops an escape sequence it cannot name instead of typing it", () => {
     expect(sendKeysArgs(key("\x1b[99~"))).toBe(null);
+  });
+});
+
+describe("parseCaptureWithCursor", () => {
+  // `capture-pane -S-30 ; display-message '<flag> <x> <y> <history>'`.
+  const screen = ["older", "❯ hi", ""].join("\n") + "\n";
+
+  it("splits the cursor line off and keeps the capture as captured", () => {
+    const parsed = parseCaptureWithCursor(`${screen}1 4 1 1\n`, 30);
+    expect(parsed.content).toBe(screen);
+    // One history line above the screen, cursor on screen row 1.
+    expect(parsed.cursor).toEqual({ line: 2, col: 4 });
+  });
+
+  it("offsets by at most the lines asked for when history is deeper", () => {
+    // Checked against a live Claude pane: history 2103, cursor row 50 is
+    // captured line 80 of `-S-30`.
+    expect(parseCaptureWithCursor(`x\n1 2 50 2103\n`, 30).cursor).toEqual({
+      line: 80,
+      col: 2,
+    });
+  });
+
+  it("has no cursor when the pane hides it or the line is malformed", () => {
+    expect(parseCaptureWithCursor(`${screen}0 4 1 1\n`, 30).cursor).toBe(null);
+    expect(parseCaptureWithCursor(`${screen}junk\n`, 30).cursor).toBe(null);
+    expect(parseCaptureWithCursor(`${screen}1 -1 1 1\n`, 30).cursor).toBe(
+      null,
+    );
   });
 });
 

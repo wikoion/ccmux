@@ -47,6 +47,90 @@ export async function capturePane(
   return output;
 }
 
+/** Where a pane's cursor sits in a capture. */
+export interface PaneCursor {
+  /** Line index in the captured text. */
+  line: number;
+  /** Screen column. */
+  col: number;
+}
+
+export interface PaneCapture {
+  content: string;
+  /** Null when the pane hides its cursor. */
+  cursor: PaneCursor | null;
+}
+
+/** Asked for alongside a capture, in the order `parseCaptureWithCursor` reads. */
+const CURSOR_FORMAT = "#{cursor_flag} #{cursor_x} #{cursor_y} #{history_size}";
+
+/**
+ * Capture a pane and where its cursor is, in one tmux call. `capture-pane`
+ * never includes the cursor, and Claude Code draws its input caret with the
+ * real one. THROWS on failure, like `capturePane`.
+ */
+export async function capturePaneWithCursor(
+  paneId: string,
+  lines: number = 50,
+): Promise<PaneCapture> {
+  const proc = Bun.spawn(
+    tmuxArgv(
+      "capture-pane",
+      "-e",
+      "-t",
+      paneId,
+      "-p",
+      `-S-${lines}`,
+      ";",
+      "display-message",
+      "-p",
+      "-t",
+      paneId,
+      CURSOR_FORMAT,
+    ),
+    { stdout: "pipe", stderr: "ignore" },
+  );
+
+  const [output, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(
+      `tmux capture-pane failed for ${paneId} (exit ${exitCode})`,
+    );
+  }
+  return parseCaptureWithCursor(output, lines);
+}
+
+/**
+ * Split `capture-pane -S-<lines> ; display-message CURSOR_FORMAT` output. The
+ * capture starts `min(lines, history_size)` lines above the screen (tmux
+ * clamps `-S` to the oldest history line), so the cursor's line in it is that
+ * plus `cursor_y`. Pure, for tests.
+ */
+export function parseCaptureWithCursor(
+  output: string,
+  lines: number,
+): PaneCapture {
+  const body = output.endsWith("\n") ? output.slice(0, -1) : output;
+  const split = body.lastIndexOf("\n");
+  const content = output.slice(0, split + 1);
+  const fields = body.slice(split + 1).split(" ");
+  const [flag, x, y, history] = fields.map(Number);
+  if (
+    fields.length !== 4 ||
+    flag !== 1 ||
+    ![x, y, history].every((n) => Number.isInteger(n) && n! >= 0)
+  ) {
+    return { content, cursor: null };
+  }
+  return {
+    content,
+    cursor: { line: Math.min(lines, history!) + y!, col: x! },
+  };
+}
+
 const SPECIAL_KEY_MAP: Record<string, string> = {
   return: "Enter",
   enter: "Enter",

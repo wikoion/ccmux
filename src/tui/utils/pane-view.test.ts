@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { RGBA, StyledText } from "@opentui/core";
-import { fitPaneLines } from "./pane-view";
+import { renderPaneView, type CursorBlock } from "./pane-view";
 import { parseAnsiToStyledText } from "./ansi-renderer";
 
 const text = (styled: StyledText) => styled.chunks.map((c) => c.text).join("");
 const fit = (input: string, width: number) =>
-  text(fitPaneLines(parseAnsiToStyledText(input), width));
+  text(renderPaneView(parseAnsiToStyledText(input), width));
 
-describe("fitPaneLines", () => {
+describe("renderPaneView line fitting", () => {
   it("shortens a full-width rule to exactly the width", () => {
     // Claude Code's chat box: a rule as wide as its own 174-column pane.
     const rule = "─".repeat(174);
@@ -46,12 +46,53 @@ describe("fitPaneLines", () => {
   });
 
   it("keeps the styling of what it shortens", () => {
-    const styled = fitPaneLines(
+    const styled = renderPaneView(
       parseAnsiToStyledText(`\x1b[38;5;246m${"─".repeat(100)}\x1b[39m`),
       20,
     );
     const rule = styled.chunks.find((c) => c.text.includes("─"))!;
     expect(rule.text).toBe("─".repeat(20));
     expect(rule.fg).toBeInstanceOf(RGBA);
+  });
+});
+
+describe("renderPaneView cursor", () => {
+  const fg = RGBA.fromHex("#000000");
+  const bg = RGBA.fromHex("#ffffff");
+  const at = (line: number, col: number): CursorBlock => ({ line, col, fg, bg });
+  const draw = (input: string, cursor: CursorBlock, width = 200) =>
+    renderPaneView(parseAnsiToStyledText(input), width, cursor);
+  /** The text of the chunk drawn as the cursor block. */
+  const cursorCell = (styled: StyledText) =>
+    styled.chunks.filter((c) => c.bg === bg).map((c) => c.text);
+
+  it("draws the block on the character at the cursor's column", () => {
+    const styled = draw("first line\n❯ hello", at(1, 4));
+    expect(cursorCell(styled)).toEqual(["l"]);
+    expect(text(styled)).toBe("first line\n❯ hello");
+  });
+
+  it("pads out to a cursor past the end of the line", () => {
+    // Claude's caret sits after "❯ ", which the capture trims to "❯".
+    const styled = draw("❯", at(0, 2));
+    expect(cursorCell(styled)).toEqual([" "]);
+    expect(text(styled)).toBe("❯  ");
+  });
+
+  it("counts wide characters as two columns", () => {
+    expect(cursorCell(draw("日本語", at(0, 2)))).toEqual(["本"]);
+    expect(cursorCell(draw("日本語", at(0, 3)))).toEqual(["本"]);
+  });
+
+  it("keeps the cursor cell when fitting shortens the padding it sits in", () => {
+    // A Gemini-style box: the caret sits on the first padding space.
+    const line = `│ > hi${" ".repeat(40)}│`;
+    const styled = draw(line, at(0, 6), 20);
+    expect(cursorCell(styled)).toEqual([" "]);
+    expect(text(styled)).toBe(`│ > hi${" ".repeat(13)}│`);
+  });
+
+  it("draws nothing for a line the capture does not have", () => {
+    expect(cursorCell(draw("only line", at(5, 0)))).toEqual([]);
   });
 });
