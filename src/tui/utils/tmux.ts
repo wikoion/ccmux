@@ -73,27 +73,61 @@ async function tmuxSendKeys(
   return (await proc.exited) === 0;
 }
 
+interface ForwardedKey {
+  name: string;
+  ctrl?: boolean;
+  shift?: boolean;
+  sequence?: string;
+}
+
+/** True when `s` holds no C0 control characters or DEL. */
+function isPrintable(s: string): boolean {
+  return !/[\x00-\x1f\x7f]/.test(s);
+}
+
+/**
+ * The `send-keys` arguments for one key event, or null for a key we do not
+ * forward. Pure, for tests.
+ *
+ * OpenTUI reports Shift+A as name "a" with shift set and sequence "A", so
+ * printable keys are typed from the sequence, not the name. Named keys carry
+ * shift as tmux's `S-` prefix and tmux encodes it per the pane's key mode,
+ * exactly as it would a key typed into that pane directly: with
+ * `extended-keys` off, S-Up still sends `ESC[1;2A` and S-Enter falls back to a
+ * plain CR. Shift+Tab is tmux's `BTab`.
+ */
+export function sendKeysArgs(event: ForwardedKey): string[] | null {
+  const { name, ctrl, shift, sequence } = event;
+
+  if (ctrl && name.length === 1) {
+    return [`C-${name}`];
+  }
+
+  const mapped = SPECIAL_KEY_MAP[name];
+  if (mapped) {
+    if (!shift) return [mapped];
+    return [mapped === "Tab" ? "BTab" : `S-${mapped}`];
+  }
+
+  if (sequence && isPrintable(sequence)) {
+    return ["-l", sequence];
+  }
+
+  if (name.length === 1) {
+    return ["-l", name];
+  }
+
+  return null;
+}
+
 export async function sendKeys(
   target: string,
-  event: { name: string; ctrl?: boolean },
+  event: ForwardedKey,
 ): Promise<boolean> {
   try {
-    const { name, ctrl } = event;
-
-    if (ctrl && name.length === 1) {
-      return tmuxSendKeys(target, `C-${name}`);
-    }
-
-    const mapped = SPECIAL_KEY_MAP[name];
-    if (mapped) {
-      return tmuxSendKeys(target, mapped);
-    }
-
-    if (name.length === 1) {
-      return tmuxSendKeys(target, "-l", name);
-    }
-
-    return false;
+    const args = sendKeysArgs(event);
+    if (!args) return false;
+    return tmuxSendKeys(target, ...args);
   } catch {
     return false;
   }

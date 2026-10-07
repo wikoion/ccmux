@@ -3674,7 +3674,8 @@ export function App(props: AppProps) {
 
     // Preview focus mode: forward keys to tmux pane
     if (store.state.previewFocused) {
-      if (key === "tab" || key === "escape") {
+      // Shift+Tab is the agent's (Claude's mode cycle), so only a bare Tab exits.
+      if ((key === "tab" && !event.shift) || key === "escape") {
         store.actions.exitPreviewFocus();
       } else if (event.ctrl && (key === "n" || key === "p")) {
         store.actions.moveSelection(key === "n" ? 1 : -1);

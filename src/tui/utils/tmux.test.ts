@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { parseKeypress } from "@opentui/core";
 import {
   parseLaunchPane,
   parseRestoreCandidate,
@@ -15,7 +16,7 @@ import { PANE_FIELD_SEP } from "../../lib/tmux-format";
 // reaches this file. A distinct cache entry always gets the implementation,
 // the same trick client-switch.test.ts uses.
 const REAL_TMUX_SPECIFIER = "./tmux" + "?real";
-const { openAgentsWindow, notifyActivePane } = (await import(
+const { openAgentsWindow, notifyActivePane, sendKeysArgs } = (await import(
   REAL_TMUX_SPECIFIER
 )) as typeof import("./tmux");
 
@@ -98,6 +99,50 @@ describe("parseRestoreCandidate", () => {
 });
 
 // Format: "#{window_id}<sep>#{window_name}"
+describe("sendKeysArgs", () => {
+  // Built from OpenTUI's own parser so the tests track what the TUI really
+  // receives, not a hand-written guess at the event shape.
+  const key = (raw: string) => {
+    const parsed = parseKeypress(raw);
+    if (!parsed) throw new Error(`unparsed key ${JSON.stringify(raw)}`);
+    return parsed;
+  };
+
+  it("types Shift+letter as the capital, not the lowercase name", () => {
+    // OpenTUI reports "A" as name "a" with shift set; the name alone typed "a".
+    expect(sendKeysArgs(key("A"))).toEqual(["-l", "A"]);
+  });
+
+  it("types shifted symbols and plain letters literally", () => {
+    expect(sendKeysArgs(key("!"))).toEqual(["-l", "!"]);
+    expect(sendKeysArgs(key("a"))).toEqual(["-l", "a"]);
+    expect(sendKeysArgs(key("é"))).toEqual(["-l", "é"]);
+  });
+
+  it("sends Shift+Tab as BTab", () => {
+    expect(sendKeysArgs(key("\x1b[Z"))).toEqual(["BTab"]);
+    expect(sendKeysArgs(key("\t"))).toEqual(["Tab"]);
+  });
+
+  it("carries shift on named keys", () => {
+    expect(sendKeysArgs(key("\x1b[1;2A"))).toEqual(["S-Up"]);
+    expect(sendKeysArgs(key("\x1b[1;2D"))).toEqual(["S-Left"]);
+    expect(sendKeysArgs(key("\x1b[27;2;13~"))).toEqual(["S-Enter"]);
+    expect(sendKeysArgs(key("\x1b[A"))).toEqual(["Up"]);
+    expect(sendKeysArgs(key("\r"))).toEqual(["Enter"]);
+  });
+
+  it("keeps ctrl keys as C- names", () => {
+    expect(sendKeysArgs(key("\x01"))).toEqual(["C-a"]);
+  });
+
+  it("never types an escape sequence literally", () => {
+    // Alt+a's sequence is ESC a; it falls back to the bare name as before.
+    expect(sendKeysArgs(key("\x1ba"))).toEqual(["-l", "a"]);
+    expect(sendKeysArgs(key("\x1b[5~"))).toBe(null);
+  });
+});
+
 describe("parseWindowIdByName", () => {
   it("finds the named window among others", () => {
     const output = [

@@ -2036,6 +2036,40 @@ describe("App pane-switch feedback and server scoping", () => {
     }
   });
 
+  it("forwards Shift+Tab to the preview pane instead of leaving focus", async () => {
+    // Claude cycles its permission mode on Shift+Tab, so in preview focus it
+    // has to reach the pane. A bare Tab still leaves focus.
+    const restoreFetch = withServerInfo(null);
+    try {
+      await renderWithSession({ initialPreview: true });
+      setup.mockInput.pressKey("j");
+      await setup.renderOnce();
+      setup.mockInput.pressTab();
+      await setup.renderOnce();
+      sendKeysSpy.mockClear();
+
+      setup.mockInput.pressTab({ shift: true });
+      await setup.renderOnce();
+      expect(sendKeysSpy).toHaveBeenCalledTimes(1);
+      expect(sendKeysSpy.mock.calls[0]![1]).toMatchObject({
+        name: "tab",
+        shift: true,
+      });
+      expect(squish(setup.captureCharFrame())).toContain(
+        squish("keys sent to pane"),
+      );
+
+      setup.mockInput.pressTab();
+      await setup.renderOnce();
+      expect(sendKeysSpy).toHaveBeenCalledTimes(1);
+      expect(squish(setup.captureCharFrame())).not.toContain(
+        squish("keys sent to pane"),
+      );
+    } finally {
+      restoreFetch();
+    }
+  });
+
   it("persistent picker: a failed pane switch shows a toast (was sidebar-only)", async () => {
     // The Toast render gate used to be sidebar-only, so a switch failure in the
     // persistent picker showed nothing. Now it must surface here too.
