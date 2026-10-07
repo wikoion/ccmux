@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as preferences from "./preferences";
 import { markDaemonProcess, resetTmuxSocketCache } from "./tmux-socket";
 import {
+  escapeTmuxArg,
   tmuxArgv,
   tmuxArgvFor,
   tmuxShellPrefix,
@@ -149,5 +150,24 @@ describe("per-process rule reaches the builder", () => {
       "work",
       "list-panes",
     ]);
+  });
+});
+
+describe("escapeTmuxArg", () => {
+  // tmux strips a trailing `;` from any argument and ends the command there.
+  it("escapes a trailing semicolon", () => {
+    expect(escapeTmuxArg("ls;")).toBe("ls\\;");
+    expect(escapeTmuxArg(";")).toBe("\\;");
+  });
+
+  it("keeps text that already ends in a backslash-semicolon intact", () => {
+    // tmux reads `a\\;` back as `a\;`, the text that was meant.
+    expect(escapeTmuxArg("a\\;")).toBe("a\\\\;");
+  });
+
+  it("leaves everything else alone", () => {
+    expect(escapeTmuxArg("a;b")).toBe("a;b");
+    expect(escapeTmuxArg("")).toBe("");
+    expect(escapeTmuxArg("Enter")).toBe("Enter");
   });
 });

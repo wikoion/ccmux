@@ -4,7 +4,11 @@ import {
   SIDEBAR_PANE_TITLE,
 } from "../../lib/config";
 import { PANE_FIELD_SEP } from "../../lib/tmux-format";
-import { tmuxArgv, tmuxShellPrefix } from "../../lib/tmux-exec";
+import {
+  escapeTmuxArg,
+  tmuxArgv,
+  tmuxShellPrefix,
+} from "../../lib/tmux-exec";
 import {
   resolvePinnedTmuxClientTty,
   resolveTmuxClientSessionId,
@@ -184,15 +188,6 @@ interface ForwardedKey {
 /** True when `s` holds no C0 control characters or DEL. */
 function isPrintable(s: string): boolean {
   return !/[\x00-\x1f\x7f]/.test(s);
-}
-
-/**
- * tmux ends a command at any argument ending in `;` and drops the `;`
- * (`cmd_parse_from_arguments` in cmd-parse.y), so `send-keys -l ;` typed
- * nothing. `\;` is its escape for a literal one.
- */
-function escapeTmuxArg(arg: string): string {
-  return arg.endsWith(";") ? `${arg.slice(0, -1)}\\;` : arg;
 }
 
 /**

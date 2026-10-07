@@ -1,5 +1,5 @@
 import { DaemonPerf } from "./perf";
-import { tmuxArgv } from "../lib/tmux-exec";
+import { escapeTmuxArg, tmuxArgv } from "../lib/tmux-exec";
 
 export async function capturePane(
   paneId: string,
@@ -107,7 +107,7 @@ export async function sendLiteralToPane(
 ): Promise<boolean> {
   try {
     const literal = Bun.spawn(
-      tmuxArgv("send-keys", "-t", paneId, "-l", "--", text),
+      tmuxArgv("send-keys", "-t", paneId, "-l", "--", escapeTmuxArg(text)),
       { stdout: "pipe", stderr: "pipe" },
     );
     const literalExit = await literal.exited;

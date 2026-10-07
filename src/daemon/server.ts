@@ -11,7 +11,7 @@ import {
 } from "../lib/config";
 import { getPreferences } from "../lib/preferences";
 import { listTmuxClientTtys } from "../lib/tmux-client";
-import { tmuxArgv } from "../lib/tmux-exec";
+import { escapeTmuxArg, tmuxArgv } from "../lib/tmux-exec";
 import { attemptedTmuxSocketPath } from "../lib/tmux-socket";
 import {
   capturePane,
@@ -2816,7 +2816,13 @@ export class DaemonServer {
 
     try {
       const proc = Bun.spawn(
-        tmuxArgv("send-keys", "-t", target, restartCommand, "Enter"),
+        tmuxArgv(
+          "send-keys",
+          "-t",
+          target,
+          escapeTmuxArg(restartCommand),
+          "Enter",
+        ),
         { stdout: "pipe", stderr: "pipe" },
       );
       const exitCode = await proc.exited;
@@ -5203,7 +5209,7 @@ export class DaemonServer {
       // inside it as a single-quoted argument, so no part of it can be
       // interpreted as a tmux key name.
       const sendProc = Bun.spawn(
-        tmuxArgv("send-keys", "-t", paneId, command, "Enter"),
+        tmuxArgv("send-keys", "-t", paneId, escapeTmuxArg(command), "Enter"),
         { stdout: "pipe", stderr: "pipe" },
       );
       const sendExit = await sendProc.exited;

@@ -34,6 +34,18 @@ export function tmuxArgv(...args: string[]): string[] {
 }
 
 /**
+ * Escape a free-text argument for a tmux argv. tmux ends a command at any
+ * argument ending in `;` and drops the `;` (`cmd_parse_from_arguments` in
+ * cmd-parse.y), so `send-keys -l -- 'ls;'` typed `ls`. `\;` is its escape for a
+ * literal one, and text already ending in `\;` survives as well (tmux turns
+ * `\\;` back into `\;`). Not applied inside {@link tmuxArgv}, whose callers
+ * may pass `;` as a real command separator.
+ */
+export function escapeTmuxArg(arg: string): string {
+  return arg.endsWith(";") ? `${arg.slice(0, -1)}\\;` : arg;
+}
+
+/**
  * Run a tmux command synchronously and return its stdout, or null on failure.
  *
  * Synchronous (unlike ccmux's other tmux queries) because the "osc"

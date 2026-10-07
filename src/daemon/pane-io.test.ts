@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { resolvePaneLocation, sendPromptToPane } from "./pane-io";
+import {
+  resolvePaneLocation,
+  sendLiteralToPane,
+  sendPromptToPane,
+} from "./pane-io";
 
 /**
  * Stub `Bun.spawn`, recording argv and replaying one tmux outcome.
@@ -61,6 +65,20 @@ describe("sendPromptToPane", () => {
         .filter((a) => a.includes("paste-buffer"))
         .map((a) => a[a.indexOf("-b") + 1]);
       expect(pasted.sort()).toEqual([...names].sort());
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("sendLiteralToPane", () => {
+  it("keeps a trailing semicolon in the text", async () => {
+    // tmux strips a trailing `;` from any argument and ends the command
+    // there, so `echo hi;` used to arrive as `echo hi`.
+    const { argv, restore } = withTmux({});
+    try {
+      await sendLiteralToPane("%3", "echo hi;", false);
+      expect(argv[0]!.slice(-3)).toEqual(["-l", "--", "echo hi\\;"]);
     } finally {
       restore();
     }
