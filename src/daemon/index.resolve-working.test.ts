@@ -70,6 +70,13 @@ function createStaleClaudeSession(
   return sessionId;
 }
 
+/**
+ * What the fake `%1` shows: Claude's composer with no spinner line, i.e. not
+ * working. The static ✳ title proves nothing (#205), so the reconciler
+ * captures the pane, and without this it captured the developer's real `%1`.
+ */
+const IDLE_CLAUDE_SCREEN = `${"─".repeat(40)}\n❯ \n${"─".repeat(40)}\n  ? for shortcuts\n`;
+
 function makeDeps(sessionManager: SessionManager) {
   return {
     sessionManager,
@@ -82,6 +89,7 @@ function makeDeps(sessionManager: SessionManager) {
     logAdapters: new Map(),
     now: Date.now,
     getLogFileMtime: () => 0,
+    capturePane: async () => IDLE_CLAUDE_SCREEN,
   };
 }
 

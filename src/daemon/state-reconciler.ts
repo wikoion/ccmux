@@ -73,6 +73,12 @@ export interface ReconcilerDeps {
    * marker ownership check in `collectPaneTrackedSources`.
    */
   paneIdHostingPid?(pid: number): string | null | undefined;
+  /**
+   * Pane capture, defaulting to tmux (`pane-io`'s `capturePane`). Every
+   * reconciler capture goes through it, so a test answers for its fake pane
+   * instead of reading whatever the developer's live tmux has at that id.
+   */
+  capturePane?: (paneId: string, lines?: number) => Promise<string>;
 }
 
 /**
@@ -249,10 +255,13 @@ async function reconcileNativeSession(
  * reconcile stays capture-free.
  */
 async function applyPermissionPaneEvidence(
-  deps: Pick<ReconcilerDeps, "agents" | "now">,
+  deps: Pick<ReconcilerDeps, "agents" | "now" | "capturePane">,
   session: Session,
   sources: CascadeSource[],
-  capture: (paneId: string, lines?: number) => Promise<string> = capturePane,
+  capture: (
+    paneId: string,
+    lines?: number,
+  ) => Promise<string> = deps.capturePane ?? capturePane,
 ): Promise<void> {
   const agent = deps.agents.find((a) => a.name === session.agentType);
   if (!agent) return;
@@ -667,7 +676,11 @@ async function resolveNativeClaudeStates(
     stalePaneSessions.map(async ({ id, paneId, wasWorking }) => ({
       id,
       wasWorking,
-      detection: await detectPaneState(paneId, paneById.get(paneId)),
+      detection: await detectPaneState(
+        paneId,
+        paneById.get(paneId),
+        deps.capturePane,
+      ),
     })),
   );
 
@@ -793,7 +806,7 @@ async function reconcilePaneTrackedClaudeSession(
 
   const paneId = session.tmuxPane!;
   const pane = paneById.get(paneId);
-  const detection = await detectPaneState(paneId, pane);
+  const detection = await detectPaneState(paneId, pane, deps.capturePane);
   const { state, attentionType, pendingTool } = detection;
 
   if (state === "plan_approval") {
@@ -974,7 +987,12 @@ async function reconcilePaneTrackedAgentSession(
     ruleMatch = cached.ruleMatch;
     fromCache = true;
   } else {
-    ruleMatch = await captureTerminalRule(session, agent, pane);
+    ruleMatch = await captureTerminalRule(
+      session,
+      agent,
+      pane,
+      deps.capturePane,
+    );
   }
 
   const { sources, metadata, suspectPermissionUpgrade } =
@@ -986,7 +1004,7 @@ async function reconcilePaneTrackedAgentSession(
   // settles it. Confined to this branch, so routine ticks pay nothing.
   if (suspectPermissionUpgrade) {
     const live = fromCache
-      ? await captureTerminalRule(session, agent, pane)
+      ? await captureTerminalRule(session, agent, pane, deps.capturePane)
       : ruleMatch;
     if (live?.status === "waiting" && live.attentionType === "permission") {
       sources.push(terminalSource(live, { upgradeOnly: sources.length > 0 }));
@@ -1009,9 +1027,10 @@ async function captureTerminalRule(
   session: Session,
   agent: AgentDef,
   pane: TmuxPane,
+  capture: (paneId: string, lines?: number) => Promise<string> = capturePane,
 ): Promise<ReturnType<typeof matchTerminalRule>> {
   const capturedAtMs = Date.now();
-  const content = await capturePane(session.tmuxPane!, 50);
+  const content = await capture(session.tmuxPane!, 50);
   const ruleMatch = matchTerminalRule(content, agent);
   if (pane.windowActivity !== null) {
     terminalRuleCache.set(session.id, {

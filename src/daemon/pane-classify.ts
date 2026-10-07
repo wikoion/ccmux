@@ -321,6 +321,7 @@ export function classifyPaneContent(content: string): PaneDetectionResult {
 export async function detectPaneState(
   paneId: string,
   pane?: TmuxPane,
+  capture: (paneId: string, lines?: number) => Promise<string> = capturePane,
 ): Promise<PaneDetectionResult> {
   if (pane) {
     if (isNonAgentCommand(pane.currentCommand)) {
@@ -333,5 +334,5 @@ export async function detectPaneState(
     }
   }
 
-  return classifyPaneContent(await capturePane(paneId, 20));
+  return classifyPaneContent(await capture(paneId, 20));
 }
