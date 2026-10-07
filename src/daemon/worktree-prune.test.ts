@@ -1703,6 +1703,9 @@ describe("runPrune", () => {
       // the process alive, exactly like an agent that resists both
       // SIGTERM and SIGKILL.
       killProcess: () => {},
+      // The pane is closed even on a refusal. Left to the default, this
+      // ran a real `kill-pane -t %9` against the developer's tmux server.
+      closePane: async () => "closed",
     });
 
     expect(result.outcomes[0].removed).toBe(false);
