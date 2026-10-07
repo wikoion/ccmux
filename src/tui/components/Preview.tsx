@@ -229,10 +229,11 @@ interface PreviewProps {
   refreshKey?: number;
   searchQuery?: string;
   /**
-   * Focused-poll backoff bounds in ms (defaults 500/2000). Injectable so
-   * tests can observe the backoff without multi-second waits.
+   * Poll backoff bounds in ms (defaults 500/2000), and the first delay after
+   * a refreshKey bump (default 16). Injectable so tests can observe the
+   * backoff without multi-second waits.
    */
-  pollDelays?: { min: number; max: number };
+  pollDelays?: { min: number; max: number; kick?: number };
 }
 
 export const Preview: Component<PreviewProps> = (props) => {
@@ -250,6 +251,12 @@ export const Preview: Component<PreviewProps> = (props) => {
     | typeof CAPTURE_FAILED
     | typeof CROSS_SERVER
     | null = null;
+  // A kick can start a capture while a poll's is still in flight. Number
+  // them so an older capture resolving last cannot repaint over a newer one.
+  let captureSeq = 0;
+  let appliedSeq = 0;
+  // Restarts the poll loop at the kick delay; set while the loop runs.
+  let kickPoll: (() => void) | null = null;
 
   // Fold one capture outcome into the dedupe state: repaint (and report
   // "changed" to the poll loop) only on a transition, whether between two
@@ -281,6 +288,7 @@ export const Preview: Component<PreviewProps> = (props) => {
       if (props.session?.tmuxPane !== tmuxPane) return false;
       return applyCapture(CROSS_SERVER, "Pane is on a different tmux server");
     }
+    const seq = ++captureSeq;
     // capturePane throws on a dead pane; fold to null so the stale-resolve guard
     // handles both. null is unambiguous: a live but empty pane resolves to "".
     const paneContent = await capturePane(tmuxPane, 30).catch(() => null);
@@ -288,6 +296,8 @@ export const Preview: Component<PreviewProps> = (props) => {
     // it would paint under the new row and corrupt `lastCaptured`. Mirrors the
     // BackgroundPeek logPath guard above.
     if (props.session?.tmuxPane !== tmuxPane) return false;
+    if (seq < appliedSeq) return false;
+    appliedSeq = seq;
     if (paneContent === null) {
       return applyCapture(CAPTURE_FAILED, "Failed to capture pane");
     }
@@ -316,41 +326,60 @@ export const Preview: Component<PreviewProps> = (props) => {
   });
 
   // Forced re-capture: the parent bumps refreshKey when it knows the pane
-  // just changed underneath us (e.g. review notes delivered to the agent's
-  // composer), so the user sees the outcome without focusing the preview.
-  // `on(..., {defer})` tracks only the key: mount and selection changes are
-  // already captured by the effects above, and an unfocused preview stays a
-  // single snapshot otherwise.
+  // just changed underneath us (a key forwarded from preview focus, review
+  // notes delivered to the agent's composer). `on(..., {defer})` tracks only
+  // the key: mount and selection changes are already captured by the effects
+  // above. The bump kicks the poll loop rather than capturing once, because
+  // the agent redraws some milliseconds after the key lands and a single
+  // immediate capture usually sees the old screen.
   createEffect(
     on(
       () => props.refreshKey,
       () => {
-        if (props.session?.tmuxPane) refreshPane();
+        if (!props.session?.tmuxPane) return;
+        if (kickPoll) kickPoll();
+        else void refreshPane();
       },
       { defer: true },
     ),
   );
 
-  // Background refresh while focused (catches external output). Polls at
-  // 500ms while the pane is changing, doubling up to 2s while it is quiet
-  // so a silent pane costs 30 captures/min instead of 120.
+  // Background refresh (catches the agent's own output, focused or not; an
+  // unfocused preview used to stay a frozen snapshot while the agent worked).
+  // Polls at 500ms while the pane is changing, doubling up to 2s while it is
+  // quiet so a silent pane costs 30 captures/min instead of 120. A kick
+  // restarts the schedule at 16ms, doubling while nothing changes, so typed
+  // keys show as soon as the agent redraws.
   createEffect(() => {
-    if (!props.focused || !props.session?.tmuxPane) return;
+    if (!props.session?.tmuxPane) return;
 
     const MIN_DELAY = props.pollDelays?.min ?? 500;
     const MAX_DELAY = props.pollDelays?.max ?? 2000;
+    const KICK_DELAY = props.pollDelays?.kick ?? 16;
     let delay = MIN_DELAY;
     let disposed = false;
+    // Bumped by each kick so a tick already in flight does not overwrite the
+    // kick's schedule with its own.
+    let generation = 0;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
-      const changed = await refreshPane();
-      if (disposed) return;
+      const mine = generation;
+      // A rejection here must not end the loop: nothing reschedules it.
+      const changed = await refreshPane().catch(() => false);
+      if (disposed || mine !== generation) return;
       delay = changed ? MIN_DELAY : Math.min(delay * 2, MAX_DELAY);
       timer = setTimeout(tick, delay);
     };
     timer = setTimeout(tick, delay);
+    kickPoll = () => {
+      generation++;
+      delay = KICK_DELAY;
+      clearTimeout(timer);
+      timer = setTimeout(tick, delay);
+    };
     onCleanup(() => {
       disposed = true;
+      kickPoll = null;
       clearTimeout(timer);
     });
   });

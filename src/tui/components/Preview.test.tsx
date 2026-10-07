@@ -504,9 +504,9 @@ describe("Preview pane capture", () => {
   });
 
   it("re-captures on a refreshKey bump even when unfocused", async () => {
-    // An unfocused preview is a single snapshot: it must NOT pick up pane
-    // changes on its own, but a refreshKey bump (e.g. after review notes are
-    // delivered to the agent's composer) forces one re-capture.
+    // A refreshKey bump (e.g. after review notes are delivered to the agent's
+    // composer) re-captures well inside the default 500ms poll delay, so the
+    // un-bumped window below still sees the old snapshot.
     let content = "BEFORE_FILL";
     captureImpl = async () => content;
     const [refreshKey, setRefreshKey] = createSignal(0);
@@ -529,13 +529,112 @@ describe("Preview pane capture", () => {
     expect(await pollFrame(15)).toContain("BEFORE_FILL");
 
     content = "AFTER_FILL";
-    // Unfocused and un-bumped: the stale snapshot stays.
+    // Un-bumped and inside the poll delay: the old snapshot stays.
     expect(await pollFrame(5)).toContain("BEFORE_FILL");
 
     setRefreshKey(1);
     const frame = await pollFrame(5);
     expect(frame).toContain("AFTER_FILL");
     expect(frame).not.toContain("BEFORE_FILL");
+  });
+
+  it("keeps polling an unfocused preview so agent output shows up", async () => {
+    // The preview used to poll only while focused, so an unfocused one froze
+    // on whatever it captured when the row was selected: the agent's answer
+    // never appeared until the selection moved.
+    let content = "THINKING";
+    captureImpl = async () => content;
+    setup = await testRender(
+      () => (
+        <TickContext.Provider value={{ tick: () => 0 }}>
+          <Preview
+            session={mockEnrichedSession({ tmuxPane: "%1" })}
+            width={40}
+            focused={false}
+            pollDelays={{ min: 20, max: 40 }}
+          />
+        </TickContext.Provider>
+      ),
+      { width: 100, height: 15 },
+    );
+    await setup.renderOnce();
+    expect(await pollFrame(15)).toContain("THINKING");
+
+    content = "ANSWER_POSTED";
+    const frame = await pollFrame(15);
+    expect(frame).toContain("ANSWER_POSTED");
+    expect(frame).not.toContain("THINKING");
+  });
+
+  it("re-captures soon after a refreshKey bump, not on the slow poll", async () => {
+    // A forwarded key bumps refreshKey, but the agent redraws a little later.
+    // The bump must restart the poll at the short kick delay; waiting out the
+    // normal delay (up to 2s on a quiet pane) was the typing lag.
+    let content = "BEFORE_KEY";
+    captureImpl = async () => content;
+    const [refreshKey, setRefreshKey] = createSignal(0);
+    setup = await testRender(
+      () => (
+        <TickContext.Provider value={{ tick: () => 0 }}>
+          <Preview
+            session={mockEnrichedSession({ tmuxPane: "%1" })}
+            width={40}
+            focused={true}
+            refreshKey={refreshKey()}
+            pollDelays={{ min: 5000, max: 5000, kick: 10 }}
+          />
+        </TickContext.Provider>
+      ),
+      { width: 100, height: 15 },
+    );
+    await setup.renderOnce();
+    expect(await pollFrame(15)).toContain("BEFORE_KEY");
+
+    setRefreshKey(1);
+    // The agent echoes the key 30ms after the bump, after the first kick
+    // capture has already seen the old screen.
+    setTimeout(() => (content = "AFTER_KEY"), 30);
+    const frame = await pollFrame(15);
+    expect(frame).toContain("AFTER_KEY");
+  });
+
+  it("does not let an older capture repaint over a newer one", async () => {
+    // A kick can start a capture while the poll's is still in flight. The
+    // first capture here is slow and returns the older screen; it must be
+    // dropped when it lands after the newer one.
+    let calls = 0;
+    captureImpl = async () => {
+      calls++;
+      if (calls === 2) {
+        await new Promise((r) => setTimeout(r, 60));
+        return "OLDER_SCREEN";
+      }
+      return calls === 1 ? "FIRST_SCREEN" : "NEWER_SCREEN";
+    };
+    const [refreshKey, setRefreshKey] = createSignal(0);
+    setup = await testRender(
+      () => (
+        <TickContext.Provider value={{ tick: () => 0 }}>
+          <Preview
+            session={mockEnrichedSession({ tmuxPane: "%1" })}
+            width={40}
+            refreshKey={refreshKey()}
+            pollDelays={{ min: 5000, max: 5000, kick: 5 }}
+          />
+        </TickContext.Provider>
+      ),
+      { width: 100, height: 15 },
+    );
+    await setup.renderOnce();
+    expect(await pollFrame(15)).toContain("FIRST_SCREEN");
+
+    setRefreshKey(1); // capture 2: slow, older screen
+    await new Promise((r) => setTimeout(r, 20));
+    setRefreshKey(2); // capture 3: fast, newer screen
+    const frame = await pollFrame(15);
+    expect(calls).toBeGreaterThanOrEqual(3);
+    expect(frame).toContain("NEWER_SCREEN");
+    expect(frame).not.toContain("OLDER_SCREEN");
   });
 
   it("renders the failure state when a capture throws (dead pane)", async () => {

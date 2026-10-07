@@ -3694,8 +3694,11 @@ export function App(props: AppProps) {
       } else {
         const session = store.selectedSession();
         if (session?.tmuxPane && ensureSameServer()) {
-          sendKeys(session.tmuxPane, event);
-          setPreviewRefreshKey((k) => k + 1);
+          // Re-capture once tmux has delivered the key; bumping first raced
+          // the send and captured the screen from before the keystroke.
+          void sendKeys(session.tmuxPane, event).then(() =>
+            setPreviewRefreshKey((k) => k + 1),
+          );
         }
       }
       event.preventDefault();
