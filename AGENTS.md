@@ -200,6 +200,7 @@ setup.renderer.destroy();               // always clean up in afterEach
 - **Shared helpers**: `src/tui/components/test-helpers.tsx` provides `mockEnrichedSession()`, `mockSession()`, `emptySummary()`
 - **TickContext**: Components using `useTick()` (SessionItem, Preview, GroupPreview) require wrapping with `TickContext.Provider`
 - **Mocking tmux**: Preview tests use `mock.module()` from `bun:test` to mock `capturePane` before importing the component
+- **No live tmux**: `bun test` preloads `scripts/test-preload.ts`, which swaps every `tmux` a test starts through `Bun.spawn`/`Bun.spawnSync` for `scripts/test-bin/tmux`, a stand-in that always fails. A test that needs tmux output stubs `Bun.spawn` or injects the module's seam (`ReconcilerDeps.capturePane`, the prune `closePane`)
 - **Input simulation**: `createMockKeys` and `createSpy` from `@opentui/core/testing` for keyboard/callback tests
 - **Fixed timestamps**: Use `"2024-01-15T12:00:00Z"` instead of `new Date()` to avoid time-dependent fragility
 - **Escape**: use `deliverEscape(setup.renderer)` from `test-helpers.tsx`. `pressKey("escape")` types six letters and a raw `pressEscape()` sits in the parser's 20ms lone-ESC window, so an assertion right after tests nothing; `test-harness-guard.test.ts` fails the suite on either spelling

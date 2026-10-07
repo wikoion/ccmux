@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stand-in for tmux under `bun test`, put first on PATH by
+# scripts/test-preload.ts. No test may reach the developer's own tmux server,
+# so every call fails the way an unreachable server does.
+echo "tmux is disabled under bun test (scripts/test-bin/tmux)" >&2
+exit 1
