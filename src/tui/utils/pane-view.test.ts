@@ -26,7 +26,9 @@ describe("renderPaneView line fitting", () => {
 
   it("keeps a right-aligned hint on its line", () => {
     const line = `  ? for shortcuts${" ".repeat(40)}auto-accept on`;
-    expect(fit(line, 40)).toBe(`  ? for shortcuts${" ".repeat(9)}auto-accept on`);
+    expect(fit(line, 40)).toBe(
+      `  ? for shortcuts${" ".repeat(9)}auto-accept on`,
+    );
   });
 
   it("never shortens leading indentation", () => {
@@ -35,7 +37,8 @@ describe("renderPaneView line fitting", () => {
   });
 
   it("leaves prose and lines that already fit alone", () => {
-    const prose = "a long reply line with single spaces that is wider than the preview";
+    const prose =
+      "a long reply line with single spaces that is wider than the preview";
     expect(fit(prose, 30)).toBe(prose);
     expect(fit("───── short", 30)).toBe("───── short");
   });
@@ -59,7 +62,12 @@ describe("renderPaneView line fitting", () => {
 describe("renderPaneView cursor", () => {
   const fg = RGBA.fromHex("#000000");
   const bg = RGBA.fromHex("#ffffff");
-  const at = (line: number, col: number): CursorBlock => ({ line, col, fg, bg });
+  const at = (line: number, col: number): CursorBlock => ({
+    line,
+    col,
+    fg,
+    bg,
+  });
   const draw = (input: string, cursor: CursorBlock, width = 200) =>
     renderPaneView(parseAnsiToStyledText(input), width, cursor);
   /** The text of the chunk drawn as the cursor block. */

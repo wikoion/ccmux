@@ -207,9 +207,7 @@ describe("parseCaptureWithCursor", () => {
   it("has no cursor when the pane hides it or the line is malformed", () => {
     expect(parseCaptureWithCursor(`${screen}0 4 1 1\n`, 30).cursor).toBe(null);
     expect(parseCaptureWithCursor(`${screen}junk\n`, 30).cursor).toBe(null);
-    expect(parseCaptureWithCursor(`${screen}1 -1 1 1\n`, 30).cursor).toBe(
-      null,
-    );
+    expect(parseCaptureWithCursor(`${screen}1 -1 1 1\n`, 30).cursor).toBe(null);
   });
 });
 

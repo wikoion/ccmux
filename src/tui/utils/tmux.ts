@@ -4,11 +4,7 @@ import {
   SIDEBAR_PANE_TITLE,
 } from "../../lib/config";
 import { PANE_FIELD_SEP } from "../../lib/tmux-format";
-import {
-  escapeTmuxArg,
-  tmuxArgv,
-  tmuxShellPrefix,
-} from "../../lib/tmux-exec";
+import { escapeTmuxArg, tmuxArgv, tmuxShellPrefix } from "../../lib/tmux-exec";
 import {
   resolvePinnedTmuxClientTty,
   resolveTmuxClientSessionId,

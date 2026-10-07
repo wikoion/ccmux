@@ -311,9 +311,7 @@ export const Preview: Component<PreviewProps> = (props) => {
     // The capture throws on a dead pane; fold to null so the stale-resolve
     // guard handles both. null is unambiguous: a live but empty pane resolves
     // to "".
-    const capture = await capturePaneWithCursor(tmuxPane, 30).catch(
-      () => null,
-    );
+    const capture = await capturePaneWithCursor(tmuxPane, 30).catch(() => null);
     // Drop a stale resolve: the selection moved panes while we awaited. Applying
     // it would paint under the new row and corrupt `lastCaptured`. Mirrors the
     // BackgroundPeek logPath guard above.
