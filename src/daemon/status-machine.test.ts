@@ -834,6 +834,49 @@ describe("status-machine", () => {
     });
   });
 
+  describe("untimestamped bookkeeping entries", () => {
+    // Claude Code 2.1.x appends `last-prompt` and `atis-latch` entries with
+    // no `timestamp` after every batch of transcript writes, so they are
+    // usually the last entry an incremental read sees.
+    it("keeps lastActivityAt from the previous entry", () => {
+      const assistant: AssistantLogEntry = {
+        type: "assistant",
+        uuid: "1",
+        parentUuid: null,
+        timestamp: "2024-01-01T12:00:00Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }],
+          stop_reason: "tool_use",
+        },
+      };
+      const latch = {
+        type: "atis-latch",
+        atis: "",
+        sessionId: "abc",
+      } as unknown as LogEntry;
+
+      const state = processEntry(
+        latch,
+        processEntry(assistant, createInitialState()),
+      );
+      expect(state.lastActivityAt).toBe("2024-01-01T12:00:00Z");
+      expect(state.status).toBe("working");
+    });
+
+    it("still takes a timestamp from an unknown entry type that has one", () => {
+      const entry = {
+        type: "file-history-snapshot",
+        uuid: "2",
+        parentUuid: null,
+        timestamp: "2024-01-01T12:05:00Z",
+      } as unknown as LogEntry;
+
+      const state = processEntry(entry, createInitialState());
+      expect(state.lastActivityAt).toBe("2024-01-01T12:05:00Z");
+    });
+  });
+
   describe("Bug 4: Summary lastActivityAt", () => {
     it("should update lastActivityAt on summary entry", () => {
       const entry: SummaryLogEntry = {

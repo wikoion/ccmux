@@ -115,7 +115,21 @@ export function processEntry(
         currentState,
       );
     default:
-      return { ...currentState, lastActivityAt: entry.timestamp };
+      // Claude Code appends bookkeeping entries with no `timestamp`
+      // (`last-prompt`, `atis-latch`, `mode`, `ai-title`) after every batch
+      // of transcript writes, so the last entry of an incremental read is
+      // usually one of these. Returning `undefined` here leaves
+      // `lastActivityAt` wherever the last status change put it (an
+      // undefined update is dropped by `updateSession`), and 30s later the
+      // stale-pane net in `resolveNativeClaudeStates` idles a session whose
+      // log is still being written.
+      return {
+        ...currentState,
+        lastActivityAt:
+          typeof entry.timestamp === "string"
+            ? entry.timestamp
+            : currentState.lastActivityAt,
+      };
   }
 }
 
