@@ -28,7 +28,11 @@ import { resolveDeadProcessState } from "./status-machine";
 import { matchTerminalRule } from "./terminal-detector";
 import { capturePane } from "./pane-io";
 import { tmuxArgv } from "../lib/tmux-exec";
-import { detectPaneState, showsIdleClaudeComposer } from "./pane-classify";
+import {
+  detectPaneState,
+  isOtherAgentCommand,
+  showsIdleClaudeComposer,
+} from "./pane-classify";
 import { normalizeTty } from "./pane-discovery";
 import type { AttentionTracker } from "./attention-tracker";
 import type { LogAdapter } from "./log-adapter";
@@ -652,6 +656,17 @@ async function resolveNativeClaudeStates(
     }
 
     if (!session.tmuxPane) continue;
+    // Claude running as a child of another tracked agent in this pane (pi
+    // driving the Agent SDK): the pane shows that agent's UI, never Claude's
+    // chrome, so a capture would read `active` and idle a session that is
+    // mid-turn. The log and PID liveness stay its only idle sources.
+    if (
+      isOtherAgentCommand(
+        paneById.get(session.tmuxPane)?.currentCommand ?? null,
+      )
+    ) {
+      continue;
+    }
     stalePaneSessions.push({
       id: session.id,
       paneId: session.tmuxPane,

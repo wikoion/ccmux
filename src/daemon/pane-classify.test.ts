@@ -7,6 +7,7 @@ import {
   classifyPaneTitle,
   detectPaneState,
   isNonAgentCommand,
+  isOtherAgentCommand,
   isShellCommand,
   showsIdleClaudeComposer,
 } from "./pane-classify";
@@ -467,6 +468,22 @@ describe("classifyClaudePromptPane", () => {
  * no) versus "is anything running here at all" (an editor says yes — someone
  * is editing a file in a directory that is about to be deleted).
  */
+describe("isOtherAgentCommand", () => {
+  it("matches a tracked agent other than Claude", () => {
+    expect(isOtherAgentCommand("pi")).toBe(true);
+    expect(isOtherAgentCommand("omp")).toBe(true);
+    expect(isOtherAgentCommand("codex")).toBe(true);
+  });
+
+  it("does not match Claude itself, shells, or nothing", () => {
+    expect(isOtherAgentCommand("claude")).toBe(false);
+    expect(isOtherAgentCommand("zsh")).toBe(false);
+    expect(isOtherAgentCommand("-zsh")).toBe(false);
+    expect(isOtherAgentCommand("node")).toBe(false);
+    expect(isOtherAgentCommand(null)).toBe(false);
+  });
+});
+
 describe("isShellCommand", () => {
   it("accepts every interactive shell, login form included", () => {
     for (const cmd of [

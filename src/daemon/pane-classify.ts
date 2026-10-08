@@ -1,5 +1,9 @@
 import type { AttentionType, TmuxPane } from "../types/session";
-import { CLAUDE_AGENT_DEF } from "../lib/agents";
+import {
+  BUILTIN_AGENTS,
+  CLAUDE_AGENT_DEF,
+  findAgentForProcess,
+} from "../lib/agents";
 import { detectTerminalStatus } from "./terminal-detector";
 import { capturePane } from "./pane-io";
 import { stripAnsi } from "../lib/strip-ansi";
@@ -76,6 +80,18 @@ function bareCommand(command: string): string {
 export function isNonAgentCommand(command: string | null): boolean {
   if (!command) return false;
   return NON_AGENT_COMMANDS.has(bareCommand(command));
+}
+
+/**
+ * True when the pane's foreground command is another tracked agent (pi, omp,
+ * codex, ...). Claude is then a child of that agent, typically the Agent SDK
+ * driven by pi, and the agent's own UI is what a capture shows. A capture
+ * with no Claude chrome in it proves nothing about Claude there.
+ */
+export function isOtherAgentCommand(command: string | null): boolean {
+  if (!command) return false;
+  const agent = findAgentForProcess(bareCommand(command), BUILTIN_AGENTS);
+  return agent !== null && agent.name !== CLAUDE_AGENT_DEF.name;
 }
 
 /**

@@ -271,6 +271,37 @@ describe("reconcileAll", () => {
       expect(session.status).toBe("idle");
     });
 
+    it("leaves a stale working session alone when another agent owns the pane", async () => {
+      // pi driving the Agent SDK: `claude` is pi's child and the pane shows
+      // pi's UI, so a capture can only ever read `active`. The capture must
+      // not even run.
+      let captured = false;
+      mockDetectPaneState = async () => {
+        captured = true;
+        return { state: "active", attentionType: null, pendingTool: null };
+      };
+
+      const id = makeSession(sessionManager, {
+        status: "working",
+        trackingMode: "native",
+        pid: 12345,
+        tmuxPane: "%1",
+        lastActivityAt: TWO_MINUTES_AGO,
+      });
+
+      await reconcileAll(
+        makeDeps(sessionManager),
+        makeSnapshot({
+          processes: [fakeProcess()],
+          panes: [fakePane({ currentCommand: "pi", paneTitle: "π - proj" })],
+        }),
+      );
+
+      const session = sessionManager.getSession(id)!;
+      expect(session.status).toBe("working");
+      expect(captured).toBe(false);
+    });
+
     it("detects plan approval from pane inspection", async () => {
       mockDetectPaneState = async () => ({
         state: "plan_approval",
